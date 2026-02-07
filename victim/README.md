@@ -28,7 +28,8 @@ This directory contains the ransomware payload simulation.
 
 ## Features
 
-- **Kiosk Mode**: Fullscreen, unclosable window.
+- **Persistence**: Saves `cerberus_id.txt` to resume the session after a restart without re-encrypting.
+- **Lockdown**: Hides the console window and uses aggressive focus grabbing to prevent closing the window.
 - **File Encryption**: Encrypts target file types using AES-GCM.
-- **Heartbeat Polling**: Automatically checks for the decryption key every 30 seconds.
-- **Auto-Decryption**: Automatically decrypts files once the key is received.
+- **Heartbeat Polling**: Automatically checks for the decryption key every 10 seconds.
+- **Auto-Decryption**: Automatically decrypts files once the key is received from the C2 server.

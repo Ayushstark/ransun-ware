@@ -6,8 +6,8 @@ This project is a safe, educational simulation of a ransomware attack, demonstra
 
 ## Architecture
 
-1.  **Attacker C2 (`attacker/`)**: A Flask-based server that manages victims, generates RSA keys, and serves decryption keys upon "payment".
-2.  **Victim Payload (`victim/`)**: A Python script that encrypts files, locks the screen ("Kiosk Mode"), and polls the server for a key.
+1.  **Attacker C2 (`attacker/`)**: A Flask-based server that manages victims, generates RSA keys, and serves decryption keys directly via API upon "payment".
+2.  **Victim Payload (`victim/`)**: A Python script that encrypts files, locks the screen (hidden console, always-on-top), and polls the server for a key. It includes persistence to survive reboots.
 
 ## Quick Start
 

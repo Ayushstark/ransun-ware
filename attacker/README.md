@@ -30,6 +30,6 @@ This directory contains the Command and Control (C2) server for the Cerberus ran
 ## Features
 
 - **Victim Dashboard**: View status of all infected clients.
-- **RSA Key Generation**: Generates a unique key pair on first run.
-- **Simulated Payment**: "Mark as Paid" button to release the decryption key.
-- **Heartbeat Handling**: Responds to client polling with status updates.
+- **Direct Key Delivery**: Decryption keys are served directly via the API upon payment (no external dead drops).
+- **Simulated Payment**: "Mark as Paid" button to release the decryption key immediately.
+- **Heartbeat Handling**: Responds to client polling with status updates and keys.

