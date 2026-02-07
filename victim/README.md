@@ -12,6 +12,7 @@ This directory contains the ransomware payload simulation.
     - Ensure the C2 server is running.
     - Python 3 installed on the victim machine.
     - Install dependencies: `pip install requests cryptography` (or use the requirements from the root).
+    - **Linux Note**: For best Kiosk effect, run in a desktop environment. The script uses Tkinter.
 
 2.  **Configuration**:
     - Open `ransomware.py`.
@@ -28,8 +29,10 @@ This directory contains the ransomware payload simulation.
 
 ## Features
 
-- **Persistence**: Saves `cerberus_id.txt` to resume the session after a restart without re-encrypting.
-- **Lockdown**: Hides the console window and uses aggressive focus grabbing to prevent closing the window.
-- **File Encryption**: Encrypts target file types using AES-GCM.
-- **Heartbeat Polling**: Automatically checks for the decryption key every 10 seconds.
+- **Persistence**: Saves `cerberus_id.txt` to resume the session. **Key Backup**: Saves `cerberus_key.bak` temporarily to prevent data loss if crashed before check-in.
+- **Lockdown**:
+  - **Linux Optimized**: Uses `grab_set()` to steal all mouse/keyboard input.
+  - **Aggressive Focus**: Constantly forces window to top every 50ms.
+  - **Exit Blocking**: Disables Alt+F4, Escape, and attempts to block Ctrl+C.
+- **Heartbeat Polling**: Automatically checks for the decryption key every 5 seconds.
 - **Auto-Decryption**: Automatically decrypts files once the key is received from the C2 server.
