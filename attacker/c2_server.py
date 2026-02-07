@@ -143,7 +143,7 @@ def checkin():
         "status": "UNPAID",
         "encrypted_key": encrypted_aes_key_b64,
         "decrypted_key": None,
-        "first_seen": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "first_seen": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "checkin_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "timer": 72 * 3600 # Default 72 hours
     }
