@@ -650,15 +650,23 @@ class RansomwareGUI:
             # --- CLEAN UP ---
             self.heartbeat_thread_running = False # Stop all background threads
             
-            # 1. Remove Persistence
+            # 1. Create STOP SIGNAL for watchdog (MUST be in temp dir, not config dir!)
+            import tempfile
+            stop_signal_path = os.path.join(tempfile.gettempdir(), "cerberus_stop_signal")
+            try:
+                with open(stop_signal_path, 'w') as f:
+                    f.write("DECRYPTION_COMPLETE")
+            except: pass
+            
+            # 2. Remove Persistence
             remove_persistence()
             
-            # 2. Mark as Clean
+            # 3. Mark as Clean (legacy, kept for compatibility)
             try:
                  with open(CLEAN_MARKER, 'w') as f: f.write("Freed")
             except: pass
 
-            # 3. Nuke Config Directory
+            # 4. Nuke Config Directory
             if os.path.exists(CONFIG_DIR):
                 try: shutil.rmtree(CONFIG_DIR)
                 except: pass

