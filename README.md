@@ -5,7 +5,8 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 
 > **⚠️ DISCLAIMER: FOR EDUCATIONAL AND RESEARCH PURPOSES ONLY.**
-> This project is a controlled simulation designed to demonstrate malware mechanics, C2 infrastructure, and defensive concepts. **Unauthorized use on systems you do not own is strictly prohibited and likely illegal.**
+> **DO NOT USE ON UNAUTHORIZED SYSTEMS.**
+> This project is a sophisticated malware simulation designed for academic research in System Security. It demonstrates advanced concepts including **Hybrid Cryptography**, **C2 Infrastructure**, **Anti-Forensics**, and **Human-Operated Targeting**. The author takes no responsibility for misuse.
 
 ---
 
@@ -32,37 +33,47 @@ graph TD
     C --> D[Victim: Executes installer.py]
     D --> E[Installer: Drops Ransomware & Watchdog]
     E --> F[Watchdog: Launches & Monitors Payload]
-    F --> G[Ransomware: Encrypts Data & Displays UI]
-    G --> H[Ransomware: Check-in with C2]
-    H --> I[Attacker: View Victim on Dashboard]
+    F --> G[Ransomware: Directory Recon & Heartbeat]
+    G --> H[Attacker: Live Target Selection]
+    H --> I[Ransomware: Encryption & Keylogging]
+    I --> J[Attacker: View Logs & Manage Dashboard]
 ```
+
+### ⚔️ Attack Lifecycle
+
+1.  **Infiltration**: The victim executes `installer.py`. A fake NVIDIA progress bar masks the silent extraction of the Ransomware and Watchdog payloads to `%APPDATA%` or `~/.config`.
+2.  **Persistence**: The Watchdog process is established as a startup service, ensuring the ransomware survives reboots and manual termination.
+3.  **Reconnaissance**: The malware performs a **Directory Recon** of the victim's home directory. It beacons this structure to the C2 Server and enters a waiting state.
+4.  **Target Selection**: The Attacker browses the victim's folders via the dashboard and manually selects target directories (e.g., `Documents`, `Pictures`) for encryption.
+5.  **Impact**: Upon receiving the command, the payload executes **AES-256-GCM** encryption across selected targets and immediately performs **Secure File Shredding** on the original data.
+6.  **Extortion**: The Ransomware GUI locks the viewport, starts the **Doomsday Timer**, and begins streaming captured keystrokes to the Attacker in real-time.
 
 ### 2. Core Components
 
+
 #### 🕵️ C2 Server (`attacker/c2_server.py`)
 The "brain" of the operation.
-- **RSA Key Management**: Generates a 2048-bit RSA pair. The Public Key is embedded in the payload, while the Private Key never leaves the server.
-- **Victim Dashboard**: A web interface tracking IP addresses, infection status, and a **Server-Side Doomsday Timer**.
-- **Remote Operations**: Allows the attacker to adjust timers, send custom commands, or release the decryption key once "paid."
+- **Hybrid Key Management**: Generates **RSA-2048** keys to securely wrap and exfiltrate the victim's unique AES keys.
+- **Human-Operated Targeting (Recon Mode)**: Victims **beacon** their home directory structure to the C2 without encrypting immediately. The attacker manually selects high-value targets via the [Target Selection UI](/target_selection).
+- **Live Monitoring**: Track IP addresses, view captured keystrokes in real-time, and monitor the **Server-Side Doomsday Timer** (enforced centrally to prevent client-side tampering).
 
-#### 📦 Dropper/Installer (`victim/installer.py`)
-A social engineering masterpiece.
-- **The Trojan**: Mimics a legitimate **NVIDIA GeForce Driver Installer**.
-- **Dual Payload**: Silently extracts and drops `ransomware.py` and `watchdog.py` while the user watches a convincing progress bar.
+#### 📦 Stealth Dropper & Builder (`builder.py`)
+- **Dynamic Configuration**: The builder patches the payload with your specific C2 IP, RSA Public Key, and a custom **Fallback Target Folder** before deployment.
+- **Social Engineering**: The generated `installer.py` mimics a legitimate **NVIDIA GeForce Driver Update** with a convincing loading bar while silently installing the payload.
 
-#### 🐕 Watchdog (`victim/watchdog.py`)
-The persistence layer.
-- **Resilience**: Constantly monitors the ransomware process. If the user kills the ransomware task, the watchdog instantly respawns it.
-- **Cleanup Coordination**: Waits for a "stop signal" from the ransomware (triggered by valid decryption) to perform a self-destruct sequence.
+#### 🐕 Watchdog Persistence (`victim/watchdog.py`)
+- **Resilience**: A separate monitoring process that instantly respawns the ransomware if terminated.
+- **Cross-Platform Hooks**: Installs itself into `~/.config/autostart` (Linux) or **Registry Run Keys** (Windows) to maintain infection across reboots.
 
-#### 💀 Ransomware Payload (`victim/ransomware.py`)
-The main execution engine.
-- **Cryptography**: Uses **AES-256-GCM** for high-speed file encryption. The AES key is unique to the session and is sent to the C2 encrypted with the **RSA-2048** Public Key.
+#### 💀 Advanced Payload (`victim/ransomware.py`)
+- **Cryptography**: High-speed **AES-256-GCM** encryption for all files matching target extensions.
+- **Anti-Forensics**: Implements **Secure File Shredding** (overwriting data with `os.urandom`) before deletion to prevent forensic file recovery.
+- **Asynchronous Keylogger**: Captures all keystrokes in a background thread and streams them to the C2 via periodic flushes.
 - **System Lockdown**:
     - **Focus Enforcement**: Forces the GUI to the top every 50ms.
     - **Input Blocking**: Disables system shortcuts (Alt+F4, Esc) and steals mouse focus.
     - **Watchdog Integration**: Automatically installs itself into system startup Registry/Paths.
-- **Psychological Components**:
+- **Psychological Warfare**:
     - **Ragebait UI**: Trolls the user with mocking messages on exit attempts.
     - **Voice Synthesis (TTS)**: Announces threats ("System failure imminent") through the system speakers every 30 seconds.
 
@@ -97,9 +108,12 @@ Access the dashboard at `http://[C2_IP]:5000` to manage your victims and release
 
 ## 🛡️ Defensive & Safety Measures
 
-To ensure this tool remains a safe educational resource:
-- **Target Restriction**: By default, it ONLY encrypts files in `~/test_data`.
-- **Offline Mode**: If the C2 is unreachable, the UI provides a "local test" path.
-- **Clean Exit**: Successful decryption removes all persistence, watchdog files, and self-deletes the malware code.
+- **Logs**: If the payload fails, check the debug logs at:
+    - **Linux**: `~/.config/cerberus/cerberus_log.txt`
+    - **Windows**: `%APPDATA%\Cerberus\cerberus_log.txt`
+- **Target Extensions**: Modify the `TARGET_EXTENSIONS` set in `ransomware.py` to target specific types (e.g., source code, databases).
+- **Safety**: The "Watchdog" is configured with a safety stop signal to ensure a clean exit after successful decryption.
 
 ---
+
+*Made with 🧠 for Cybersecurity Professionals and Students.*
